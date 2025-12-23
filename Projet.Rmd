@@ -1,0 +1,422 @@
+---
+title: 'Projet'
+output:
+  rmdformats::readthedown:
+    highlight: kate
+date: "2022-12-20"
+---
+*Juliette Ancellin*
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+```{r, warning=F}
+library(FactoMineR)
+library(factoextra)
+library("dplyr")
+```
+
+# #Question E-b :HURST
+```{r }
+#Q1: Calculate the Hurst exponent of GBPEUR, SEKEUR, and CADEUR. Determine their annualized volatility using the daily volatility and Hurst exponents.
+
+```
+
+```{r }
+data <- read.csv("Dataset-TD5mod.csv", sep = ";")
+```
+
+```{r }
+head(data)
+```
+
+```{r }
+
+data$X <- (data$GbpeurHIGH+data$GbpeurLOW)/2
+data$X.1 <- (data$SekeurHIGH+data$SekeurLOW)/2
+data["X.2"] = (data$CadeurHIGH+data$CadeurLOW)/2
+data
+
+```
+
+
+```{r }
+#Hurst Exponent Function
+hurst_expo <- function(data,vect){
+  
+  #1st STEP: M2
+  #We create two vectors corresponding to Xi and X(i-1)
+  Xitemp <- vect[2:length(vect)]
+  Xi1 <- vect[1:length(vect)-1]
+  k=2
+  #We create a new vector by substracting the two firts 
+  nouvect <- Xitemp-Xi1
+  #We create a vector with the absolute value and squared (Note: la valeur absolue n'est pas utile tant que les nombres sont réels)
+  danssomme <- abs(nouvect)^k
+  #We sum the values of the vector 
+  sommeM2 <- sum(danssomme)
+  #Then, we compute M2 by deviding it by the nmber of period
+  M2 <- sommeM2/length(danssomme)
+  
+  
+  
+  #2nd STEP: M2'
+
+  #We create two vectors as X(2i) et X(2i-1)
+
+  #Vector X(2i)
+  X2i <- vect[seq(4, dim(data)[1], by=2)]
+  #Vecteur X(2i-1)
+  X2i1temp <- vect[seq(2, dim(data)[1], by=2)]
+  X2i1 <- X2i1temp[1:length(X2i1temp)-1]
+  
+  #We create a new vector by substracting the two firts
+  nouvectp <- X2i-X2i1
+  #We create a vector with the absolute value and squared (Note: la valeur absolue n'est pas utile tant que les nombres sont réels)
+  danssommep <- abs(nouvectp)^k
+  #We sum the values of the vector 
+  sommeM2p <- sum(danssommep)
+  #Then, we compute M2' by deviding it by the nmber of period
+  M2p <- sommeM2p*2/length(danssommep)
+  
+  #3rd STEP: Computing of H
+  h <- (log2(M2p/M2))/2
+  return (h)
+}
+
+hurst_expo(data,data$X)
+```
+
+Now that we have the function, we try it on our vectors
+```{r }
+GBHurst <- hurst_expo(data,X)
+print(GBHurst)
+```
+0.6714
+
+
+```{r }
+SKHurst <- hurst_expo(data,X.1)
+print(SKHurst)
+```
+0.6546
+
+```{r }
+CAHurst <- hurst_expo(data,X.2)
+print(CAHurst)
+```
+0.6552
+
+```{r }
+#(In case the code has issues, it can go further anyway)
+GBHurst <- 0.6714
+SKHurst <- 0.6546
+CAHurst <- 0.6552
+```
+
+Now that we have the Hurst exponent of each, we compute the volatility vol(an) = vol_jour * 252^H
+
+```{r }
+#Volatility Function
+volaad <- function(vola1d,Hurst){
+  # Calculate the standard deviation of the vector 
+  vol1a <- vol1d*252^Hurst
+  # Return the standard deviation
+  return(vol1a)
+}
+```
+
+```{r }
+#Implementation
+voG <- volaad(sd(data$X),GBHurst)
+VoS <- volaad(sd(data$X.1),SKHurst)
+VoC <- volaad(sd(data$X.2),CAHurst)
+
+```
+
+
+```{r }
+#We compare both methods
+Compare_Vol = data.frame(Vecteur = c("GB", "SK", "CA"), 
+                       YVolatility = c(voG,VoS,VoC)
+)
+Compare_Vol
+```
+
+
+
+
+# Question A (Ex2, part of Q1 of TD1) : KERNEL
+```{r }
+
+#From the time series of the daily prices of the stock Natixis between January 2015 and December 2016,
+#provided with TD1, estimate a historical VaR on price returns at a one-day horizon for a given
+#probability level (this probability is a parameter which must be changed easily). You must base your
+#VaR on a non-parametric distribution (Epanechnikov Kernel)
+```
+
+Var historique donc on part du principe que la distribution future est la même que la distribution passée.
+Epanechnikov Kernel
+
+```{r }
+#k Function
+k <- function(x){ #x étant un  nombre
+  res <- 0 
+  if (abs(x)<1){
+    res <- (3/4)*(1-x^2)
+  }
+  return (res)
+}
+```
+We have k = 3/4(1-x²) for |x|<1
+
+```{r }
+#Fonction grand K avec a et b les bornes de l'intégrale et n le nombre d'itération du trapeze.
+K1 <- function(x,a,b,n){
+  return (trapeze(k,a,b,n))
+}
+K2 <- function(x){
+  return (1/4)*(2+3*x-(x^3))
+}
+
+```
+We have K1 or K2 his integral
+
+```{r }
+#Fonction F
+F<- function(x,prices){ #x being the selected value, we are looking for the best x to approximate F(x)=1-alpha
+  res <- 0
+  h <- 0.002 #1.6*sqrt(Var)
+  lenVecteurPrix <- length(prices)
+  for(i in range(lenVecteurPrix)){
+    res <- res + K2(  ((x-prices(i))/h) )
+  }
+  res <- res/x
+}
+```
+We have F(x) = 1/x * sum(K(  (x-Xi)/h ) )
+
+We look for x st F(x) = 1-alpha
+
+```{r }
+
+```
+
+
+With the Data
+```{r }
+data <- read.csv("Dataset11.csv", sep=";", header=F)
+data
+```
+```{r }
+data$V1 <- as.Date(data$V1, format = "%d/%m/%y")
+data$V2 <- as.numeric(gsub(",", ".", data$V2))
+data
+```
+I create two vectors and substract them to obtain the return of the price
+```{r }
+datai <- data$V2[2:length(data$V2)]
+datai1 <- data$V2[1:length(data$V2)-1]
+rendement <- (datai-datai1)/datai1
+price <- as.data.frame(rendement)
+head(price)
+```
+
+```{r }
+findx <- function(alpha,price){
+  #We are looking for the value to approximate
+  ValToApprox <- 1-alpha
+  #Vector of values of x that we try
+  x <- seq(from = 0, to = 1, by = 0.01)
+  #Temporary value
+  temp <- c(x)
+  res <-0
+  #We try each value of return to find the best to approximate F(x)=1-alpha
+  for(i in x){
+    temp[i] <- F(i,price)
+    #If we found the value in which F(i)=1-alpha, then
+    if((temp[i]-ValToApprox)==0){
+      #We select the value
+      res <- i
+    }
+  }
+  return (res)
+  
+}
+findx(0.95,price)
+```
+
+```{r }
+
+```
+
+
+
+
+# Question B (Ex2, Q5 and Q6 of TD2): ES
+
+```{r }
+#a – Calculate the expected shortfall for the VaR calculated in question A. How is the result, compared
+#to the VaR?
+#b – Calculate the volatility, as well as the upper and lower semi-deviations for the Natixis stock for each
+#of the four years in your dataset. What can you conclude about the riskiness of each of these years for
+#this stock?
+```
+
+```{r }
+#Fonction Intégrale utilisant la méthodes des trapèzes (BONUS)
+# Define the function
+trapeze <- function(f, a, b, n) {
+  # Calculate the step size
+  h <- (b - a) / n
+  # Initialize the sum
+  sum <- 0
+  # Loop through the intervals
+  for (i in 1:(n - 1)) {
+    # Calculate the lower and upper limits of the interval
+    x1 <- a + (i - 1) * h
+    x2 <- a + i * h
+    # Add the area of the trapezoid to the sum
+    sum <- sum + (f(x1) + f(x2)) * h / 2
+  }
+  # Return the sum
+  return(sum)
+}
+```
+
+On vérifie que notre fonction de trapèze fonctionne bien: en testant sur un exemple
+```{r }
+#In example, we take the exponential functin between 1 and 2 with 1000 iterations.
+f <- function(x){
+  return (exp(x))
+}
+t <- trapeze(f,1,2,1000)
+i <- integrate(f,1,2)
+```
+
+```{r }
+#We compare both methods
+Compare_Integrale = data.frame(Méthode = c("Trapèze", "FonctionR"), 
+                       ValeurExemple = c(t,i$value)
+)
+Compare_Integrale
+
+```
+
+
+On remarque que les valeurs sont très similaires. Si on veut des valeurs encore plus similaires, on peut augmenter le nombre d'itérations dans la méthode trapèze.
+
+```{r }
+#We have previously calculated the F(x) so we need to inverse it to have the Var, so we use solve
+ToVar <- function(f,prices){
+  return (solve(f(x,prices)==y,y))
+}
+#We use it with F, our function with Kernel
+Finv <- ToVar(F, price)
+```
+
+Pour calculer l'expected Shortfall, on intègre notre VAR avec la méthode des trapèzes.
+```{r }
+#We have: Var1 the variance function, 100 number of iterations, alpha Lbounds, 1 Ubouds
+ES <- function(Var1, alpha){
+  n <- 100
+  return (trapeze(Var1,alpha,1,n))
+}
+alpha <- 0.95
+ES1 <- ES(Finv,alpha)
+```
+
+ Le résultat est supérieur à la VAR ce qui est normal. L'ES est toujours supérieur ou égal à la VAR puisque la VAR représente le seuil de perte et l'ES la moyenne des pertes au-delà du seuil. 
+
+```{r }
+Compare_ESVAR = data.frame(Méthode = c("VaR", "ES"), 
+                       ValeurExemple = c(Finv,ES)
+)
+Compare_ESVAR 
+```
+
+# SEMIDEV
+
+```{r }
+
+# Calculate the daily returns for the past 30 days
+returns <- diff(price) / price[1:(length(price) - 1)]
+
+# Calculate the daily volatility
+n <- length(prices)
+mean <- sum(prices) / n
+variance <- sum((prices - mean)^2) / (n - 1)
+standard_deviation <- sqrt(variance)
+#volatility <- sd(returns)
+
+# Calculate the upper semi-deviation
+upper_semi_deviation <- mean(log_returns) + volatility
+
+# Calculate the lower semi-deviation
+lower_semi_deviation <- mean(log_returns) - volatility
+
+
+```
+
+```{r }
+
+```
+
+
+
+```{r }
+
+```
+
+```{r }
+
+```
+
+```{r }
+
+```
+
+```{r }
+
+```
+
+```{r }
+
+```
+
+```{r }
+
+```
+```{r }
+
+```
+
+```{r }
+
+```
+
+```{r }
+
+```
+
+
+
+
+```{r }
+
+```
+```{r }
+
+```
+
+```{r }
+
+```
+
+
+
+
+
